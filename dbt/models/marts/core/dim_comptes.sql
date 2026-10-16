@@ -38,6 +38,10 @@ select
     c.nom_client,
     c.prenom_client,
     c.email,
+    c.telephone,           -- PII: masked via post_hook
+    c.date_naissance,      -- PII: masked via post_hook
+    c.adresse_ligne1,      -- PII: masked via post_hook
+    c.adresse_ligne2,      -- PII: masked via post_hook
     c.type_compte,
     c.devise,
     c.solde_initial,

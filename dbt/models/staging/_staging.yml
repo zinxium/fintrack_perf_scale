@@ -31,6 +31,30 @@ models:
               arguments:
                 to: ref('stg_tenants')
                 field: tenant_id
+      - name: nom_client
+        config:
+          meta: {pii: true, pii_type: name, masking_policy: mask_name}
+      - name: prenom_client
+        config:
+          meta: {pii: true, pii_type: name, masking_policy: mask_name}
+      - name: email
+        config:
+          meta: {pii: true, pii_type: email, masking_policy: mask_email}
+      - name: telephone
+        config:
+          meta: {pii: true, pii_type: phone, masking_policy: mask_phone}
+      - name: date_naissance
+        config:
+          meta: {pii: true, pii_type: date_of_birth, masking_policy: mask_date_of_birth}
+      - name: iban
+        config:
+          meta: {pii: true, pii_type: iban, masking_policy: mask_iban}
+      - name: adresse_ligne1
+        config:
+          meta: {pii: true, pii_type: address, masking_policy: mask_address}
+      - name: adresse_ligne2
+        config:
+          meta: {pii: true, pii_type: address, masking_policy: mask_address}
 
   - name: stg_transactions
     description: "Transactions typées, incremental merge"
