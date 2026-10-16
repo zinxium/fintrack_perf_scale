@@ -1,0 +1,38 @@
+name: Security scan
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+
+jobs:
+  gitleaks:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sql-security:
+    name: SQL security linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install sqlfluff
+      - name: Check no SELECT *
+        run: |
+          if grep -rn "SELECT \*" dbt/models/ ; then
+            echo "❌ SELECT * détecté — expliciter les colonnes."
+            exit 1
+          fi
+      - name: Check no hardcoded IBAN/emails
+        run: |
+          if grep -rnE "([A-Z]{2}[0-9]{2}[A-Z0-9]{11,30})" dbt/models/ ; then
+            echo "❌ IBAN hardcodé détecté."
+            exit 1
+          fi

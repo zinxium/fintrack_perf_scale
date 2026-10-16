@@ -1,0 +1,113 @@
+name: dbt CI
+
+on:
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'dbt/**'
+      - '.github/workflows/dbt_ci.yml'
+
+env:
+  DBT_PROFILES_DIR: ./dbt
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_CI_USER: ${{ secrets.SNOWFLAKE_CI_USER }}
+  SNOWFLAKE_CI_PASSWORD: ${{ secrets.SNOWFLAKE_CI_PASSWORD }}
+  DBT_CI_PR_ID: ${{ github.event.pull_request.number }}
+
+jobs:
+  lint:
+    name: Lint SQL (sqlfluff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install sqlfluff
+        run: pip install sqlfluff==3.0.7
+      - name: Lint changed files
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          FILES=$(git diff --name-only --diff-filter=d origin/${{ github.base_ref }} HEAD -- 'dbt/models/**/*.sql' 2>/dev/null || echo "")
+          if [ -n "$FILES" ]; then
+            sqlfluff lint --templater jinja $FILES
+          else
+            echo "No SQL files changed."
+          fi
+
+  build-slim:
+    name: Slim CI (build modified + downstream)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: pip install dbt-snowflake==1.12.*
+
+      - name: Restore prod manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: manifest-blue
+          path: prod-artifacts/
+        continue-on-error: true
+
+      - name: Create profiles.yml
+        working-directory: ./dbt
+        run: |
+          cat > profiles.yml << EOF
+          fintrack_perf_scale:
+            target: ci
+            outputs:
+              ci:
+                type: snowflake
+                account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+                user: ${{ secrets.SNOWFLAKE_CI_USER }}
+                password: ${{ secrets.SNOWFLAKE_CI_PASSWORD }}
+                role: FINTRACK_DEV_ROLE
+                database: FINTRACK_DEV
+                warehouse: WH_DEV
+                schema: CI_${{ github.event.pull_request.number }}
+                threads: 4
+          EOF
+
+      - name: dbt deps
+        working-directory: ./dbt
+        run: dbt deps --profiles-dir .
+
+      - name: dbt build (state:modified + downstream)
+        working-directory: ./dbt
+        run: |
+          if [ -f ../prod-artifacts/manifest.json ]; then
+            echo "Prod manifest found — running slim CI (state:modified+)"
+            dbt build \
+              --profiles-dir . \
+              --target ci \
+              --select "state:modified+" \
+              --defer \
+              --state ../prod-artifacts/ \
+              --exclude resource_type:snapshot \
+              --fail-fast
+          else
+            echo "No prod manifest — running full build"
+            dbt build \
+              --profiles-dir . \
+              --target ci \
+              --exclude tag:benchmark resource_type:snapshot \
+              --fail-fast
+          fi
+
+      - name: Cleanup CI schema
+        if: always()
+        working-directory: ./dbt
+        run: |
+          dbt run-operation drop_schema \
+            --profiles-dir . \
+            --target ci \
+            --args "{schema_name: CI_${{ github.event.pull_request.number }}}"
