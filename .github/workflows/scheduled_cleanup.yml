@@ -1,0 +1,22 @@
+name: Scheduled cleanup
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 03:00 UTC quotidien
+  workflow_dispatch:
+
+jobs:
+  cleanup-orphan-ci-schemas:
+    name: Drop CI schemas older than 7d
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install snowflake-connector-python
+      - name: Drop stale schemas
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER:    ${{ secrets.SNOWFLAKE_CI_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_CI_PASSWORD }}
+        run: python scripts/python/cleanup_ci_schemas.py --older-than-days 7
