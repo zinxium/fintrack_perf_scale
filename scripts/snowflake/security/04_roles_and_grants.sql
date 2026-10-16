@@ -99,3 +99,83 @@ GRANT ROLE FINTRACK_PII_UNMASK_ROLE TO ROLE FINTRACK_ADMIN_ROLE;
 
 -- SYSADMIN doit voir tous les rôles fonctionnels (bonne pratique)
 GRANT ROLE FINTRACK_ADMIN_ROLE TO ROLE SYSADMIN;
+
+-- ============================================
+-- SECURE VIEWS : USAGE sur le schéma
+-- ============================================
+-- dbt pose SELECT sur les vues via +grants, mais sans USAGE sur le
+-- schéma, le SELECT échoue. On le donne ici une fois pour toutes.
+USE ROLE SYSADMIN;
+CREATE SCHEMA IF NOT EXISTS FINTRACK_PROD.MARTS_SECURE;
+GRANT USAGE ON SCHEMA FINTRACK_PROD.MARTS_SECURE TO ROLE FINTRACK_MARTS_R;
+GRANT USAGE ON SCHEMA FINTRACK_PROD.MARTS_SECURE TO ROLE FINTRACK_ANALYST_ROLE;
+GRANT USAGE ON SCHEMA FINTRACK_PROD.MARTS_SECURE TO ROLE FINTRACK_SUPPORT_ROLE;
+GRANT ALL   ON SCHEMA FINTRACK_PROD.MARTS_SECURE TO ROLE FINTRACK_MARTS_RW;
+
+-- ============================================
+-- GOVERNANCE : accès compliance (purge RGPD + journal)
+-- ============================================
+-- À exécuter APRÈS 06_rgpd_purge_procedure.sql (la procédure doit exister).
+USE ROLE ACCOUNTADMIN;
+GRANT USAGE ON DATABASE FINTRACK_PROD TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT USAGE ON SCHEMA FINTRACK_PROD.GOVERNANCE TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT USAGE ON PROCEDURE FINTRACK_PROD.GOVERNANCE.rgpd_purge_compte(FLOAT, VARCHAR, VARCHAR, VARCHAR)
+    TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT SELECT ON TABLE FINTRACK_PROD.GOVERNANCE.rgpd_purge_log TO ROLE FINTRACK_COMPLIANCE_ROLE;
+-- La procédure est EXECUTE AS CALLER : le rôle compliance doit pouvoir
+-- supprimer dans les tables concernées.
+GRANT DELETE ON ALL TABLES IN SCHEMA FINTRACK_PROD.RAW           TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT DELETE ON ALL TABLES IN SCHEMA FINTRACK_PROD.MARTS_CORE    TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT DELETE ON ALL TABLES IN SCHEMA FINTRACK_PROD.MARTS_FINANCE TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT DELETE ON ALL TABLES IN SCHEMA FINTRACK_PROD.SNAPSHOTS     TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT USAGE  ON SCHEMA FINTRACK_PROD.SNAPSHOTS                   TO ROLE FINTRACK_COMPLIANCE_ROLE;
+GRANT INSERT ON TABLE FINTRACK_PROD.GOVERNANCE.rgpd_purge_log    TO ROLE FINTRACK_COMPLIANCE_ROLE;
+
+-- ============================================
+-- MIGRATION DES UTILISATEURS
+-- ============================================
+-- Règle : un user reçoit UNIQUEMENT des functional roles, jamais un
+-- access role (_R / _RW) en direct.
+--
+-- Modèle pour migrer un utilisateur existant :
+--   REVOKE ROLE FINTRACK_REPORTING_ROLE FROM USER <USER>;
+--   GRANT  ROLE FINTRACK_ANALYST_ROLE   TO   USER <USER>;
+--   ALTER  USER <USER> SET DEFAULT_ROLE = FINTRACK_ANALYST_ROLE;
+--   INSERT INTO FINTRACK_PROD.GOVERNANCE.user_tenant_access
+--       (user_name, role_name, tenant_id, granted_by)
+--   VALUES ('<USER>', 'FINTRACK_ANALYST_ROLE', <TENANT_ID>, CURRENT_USER());
+--
+-- Contrôle : aucun user ne doit avoir d'access role en direct
+--   SHOW GRANTS OF ROLE FINTRACK_MARTS_R;   -- ne doit lister que des ROLES
+
+-- ============================================
+-- UTILISATEURS DE TEST (isolation RAP + matrice masking)
+-- ============================================
+-- Remplacer <MOT_DE_PASSE> avant exécution (changement forcé au 1er login).
+USE ROLE USERADMIN;
+CREATE USER IF NOT EXISTS TEST_ANALYST_2T
+    PASSWORD = '<MOT_DE_PASSE>' MUST_CHANGE_PASSWORD = TRUE
+    DEFAULT_ROLE = FINTRACK_ANALYST_ROLE DEFAULT_WAREHOUSE = WH_REPORTING
+    COMMENT = 'Test RAP : analyste rattaché à 2 tenants';
+CREATE USER IF NOT EXISTS TEST_SUPPORT_1T
+    PASSWORD = '<MOT_DE_PASSE>' MUST_CHANGE_PASSWORD = TRUE
+    DEFAULT_ROLE = FINTRACK_SUPPORT_ROLE DEFAULT_WAREHOUSE = WH_REPORTING
+    COMMENT = 'Test RAP/masking : support rattaché à 1 tenant';
+
+USE ROLE SECURITYADMIN;
+GRANT ROLE FINTRACK_ANALYST_ROLE TO USER TEST_ANALYST_2T;
+GRANT ROLE FINTRACK_SUPPORT_ROLE TO USER TEST_SUPPORT_1T;
+GRANT USAGE ON WAREHOUSE WH_REPORTING TO ROLE FINTRACK_ANALYST_ROLE;
+GRANT USAGE ON WAREHOUSE WH_REPORTING TO ROLE FINTRACK_SUPPORT_ROLE;
+
+-- À exécuter APRÈS 03_row_access_policies.sql (table user_tenant_access)
+USE ROLE ACCOUNTADMIN;
+MERGE INTO FINTRACK_PROD.GOVERNANCE.user_tenant_access t
+USING (
+    SELECT 'TEST_ANALYST_2T' AS user_name, 'FINTRACK_ANALYST_ROLE' AS role_name, 1 AS tenant_id UNION ALL
+    SELECT 'TEST_ANALYST_2T', 'FINTRACK_ANALYST_ROLE', 2 UNION ALL
+    SELECT 'TEST_SUPPORT_1T', 'FINTRACK_SUPPORT_ROLE', 3
+) s
+ON t.user_name = s.user_name AND t.tenant_id = s.tenant_id
+WHEN NOT MATCHED THEN INSERT (user_name, role_name, tenant_id, granted_by)
+    VALUES (s.user_name, s.role_name, s.tenant_id, CURRENT_USER());
