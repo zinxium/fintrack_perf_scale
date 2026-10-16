@@ -1,0 +1,237 @@
+version: 2
+
+models:
+  # ============================================
+  # DIMENSIONS
+  # ============================================
+  - name: dim_tenants
+    description: "Dimension des banques partenaires B2B2C"
+    config:
+      access: public
+    columns:
+      - name: tenant_id
+        tests: [unique, not_null]
+      - name: tenant_code
+        tests: [unique, not_null]
+      - name: contract_tier
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['gold', 'silver', 'bronze']
+
+  - name: dim_comptes
+    description: "Dimension comptes — état courant"
+    config:
+      access: public
+    columns:
+      - name: compte_id
+        tests: [unique, not_null]
+      - name: tenant_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_tenants')
+                field: tenant_id
+      - name: statut
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['actif', 'inactif', 'cloture', 'suspendu']
+      - name: kyc_level
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['basic', 'intermediate', 'advanced', 'not_verified']
+
+  - name: dim_comptes_scd2
+    description: "Dimension comptes historisée (SCD Type 2)"
+    config:
+      access: public
+    columns:
+      - name: dim_compte_sk
+        tests: [not_null, unique]
+      - name: compte_id
+        tests: [not_null]
+
+  - name: dim_categories
+    description: "Dimension catégories avec hiérarchie résolue"
+    config:
+      access: public
+    columns:
+      - name: categorie_id
+        tests: [unique, not_null]
+
+  - name: bridge_comptes_titulaires
+    description: "Bridge table pour les comptes joints (many-to-many)"
+    config:
+      access: protected
+    columns:
+      - name: compte_id
+        tests: [not_null]
+
+  # ============================================
+  # FAITS
+  # ============================================
+  - name: fct_transactions
+    description: |
+      Table de faits principale — 50-100M lignes.
+      Enrichie avec FX à date, catégorisation, compliance.
+    latest_version: 2
+    config:
+      access: public
+      contract:
+        enforced: true
+    versions:
+      - v: 1
+        defined_in: fct_transactions
+        deprecation_date: '2027-06-01'
+      - v: 2
+        defined_in: fct_transactions_v2
+        columns:
+          - include: all
+          - name: montant_hors_taxes
+            description: "Montant EUR hors TVA 20% (débits) ou montant_eur (crédits)"
+            data_type: number
+    columns:
+      # — Clés —
+      - name: transaction_id
+        description: "Identifiant unique de la transaction"
+        tests: [unique, not_null]
+        data_type: number
+      - name: external_transaction_id
+        data_type: varchar
+      - name: tenant_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_tenants')
+                field: tenant_id
+        data_type: number
+      - name: compte_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_comptes')
+                field: compte_id
+        data_type: number
+      - name: categorie_id
+        data_type: number
+      # — Temporalité —
+      - name: date_transaction
+        tests: [not_null]
+        data_type: timestamp_ntz
+      - name: jour_transaction
+        data_type: date
+      - name: semaine_transaction
+        data_type: date
+      - name: mois_transaction
+        data_type: date
+      - name: date_valeur
+        data_type: timestamp_ntz
+      - name: date_settlement
+        data_type: timestamp_ntz
+      # — Montants —
+      - name: montant
+        data_type: number
+      - name: devise
+        data_type: varchar
+      - name: montant_eur
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              config:
+                severity: warn
+              arguments:
+                min_value: 0
+                max_value: 100000000
+        data_type: number
+      - name: montant_signe
+        data_type: number
+      - name: montant_signe_eur
+        data_type: number
+      - name: frais
+        data_type: number
+      - name: montant_net
+        data_type: number
+      # — Type et statut —
+      - name: type_operation
+        data_type: varchar
+      - name: sens
+        data_type: varchar
+      - name: statut
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['validee', 'en_attente']
+        data_type: varchar
+      - name: moyen_paiement
+        data_type: varchar
+      - name: canal
+        data_type: varchar
+      # — Enrichissements —
+      - name: type_compte
+        data_type: varchar
+      - name: customer_segment
+        data_type: varchar
+      - name: pays_compte
+        data_type: varchar
+      - name: nom_categorie
+        data_type: varchar
+      - name: type_categorie
+        data_type: varchar
+      - name: groupe
+        data_type: varchar
+      # — Marchand —
+      - name: marchand_nom
+        data_type: varchar
+      - name: marchand_categorie
+        data_type: varchar
+      - name: marchand_pays
+        data_type: varchar
+      - name: marchand_mcc
+        data_type: number
+      # — Compliance —
+      - name: aml_score
+        data_type: number
+      - name: aml_flag
+        data_type: varchar
+      - name: fraud_score
+        data_type: number
+      - name: is_flagged_for_review
+        data_type: boolean
+      # — Rapprochement —
+      - name: is_reconciled
+        data_type: boolean
+      - name: reconciliation_batch_id
+        data_type: varchar
+      # — Metadata —
+      - name: source_system
+        data_type: varchar
+      - name: created_at
+        data_type: timestamp_ntz
+      - name: updated_at
+        data_type: timestamp_ntz
+      - name: _loaded_at
+        data_type: timestamp_ntz
+
+  - name: fct_virements
+    description: "Faits virements — double-écriture sortant/entrant"
+    config:
+      access: public
+    columns:
+      - name: virement_id
+        tests: [not_null]
+      - name: virement_leg
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['sortant', 'entrant']
+
+groups:
+  - name: core
+    owner:
+      name: Data Platform Team
+      email: data-platform@fintrack.example

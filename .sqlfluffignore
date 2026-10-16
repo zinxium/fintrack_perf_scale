@@ -1,0 +1,2 @@
+# Files using dbt versioning ref(v=N) syntax, not supported by jinja templater
+dbt/models/marts/core/fct_transactions_v2.sql

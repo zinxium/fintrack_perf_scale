@@ -1,0 +1,29 @@
+# ============================================================
+# Elementary Data Reliability configuration
+# ============================================================
+# Doc : https://docs.elementary-data.com/
+# ============================================================
+
+default_environment: prod
+
+targets:
+  prod:
+    type: snowflake
+    account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+    user:    "{{ env_var('SNOWFLAKE_USER') }}"
+    password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+    role:     FINTRACK_TRANSFORM_ROLE
+    warehouse: WH_TRANSFORM
+    database: FINTRACK_PROD
+    schema:   ELEMENTARY
+    threads: 4
+
+# Slack integration
+slack:
+  token: "{{ env_var('SLACK_TOKEN') }}"
+  channel: '#data-quality-alerts'
+  workflows: true
+  notify_on:
+    - failures
+    - warnings
+    - anomalies

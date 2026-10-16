@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: int_transactions_normalisees
+    description: |
+      Modèle éphémère — enrichissement des transactions avec comptes et catégories.
+      Injecté comme CTE dans les modèles aval (fct_transactions, fct_virements).
+    columns:
+      - name: transaction_id
+        tests: [not_null]
+      - name: tenant_id
+        tests: [not_null]
+
+  - name: int_fx_rates_daily
+    description: |
+      Taux de change journaliers dédupliqués — un taux par (devise, date).
+      Source : stg_fx_rates. Utilisé par fct_transactions pour la conversion EUR.
+    columns:
+      - name: devise_cible
+        tests: [not_null]
+      - name: date_cotation
+        tests: [not_null]

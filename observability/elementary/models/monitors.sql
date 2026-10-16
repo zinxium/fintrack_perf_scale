@@ -1,0 +1,30 @@
+-- ============================================================
+-- Elementary monitors — anomaly detection
+-- ============================================================
+-- Ces modèles utilisent les tests anomaly d'Elementary pour surveiller
+-- les volumétries et la fraîcheur.
+-- ============================================================
+
+-- Voir aussi packages.yml pour l'installation elementary.
+-- Les tests s'ajoutent dans les _schema.yml des modèles à monitorer :
+--
+-- version: 2
+-- models:
+--   - name: fct_transactions
+--     tests:
+--       - elementary.volume_anomalies:
+--           where_expression: "created_at > current_date() - 30"
+--           timestamp_column: created_at
+--       - elementary.freshness_anomalies:
+--           timestamp_column: _loaded_at
+--     columns:
+--       - name: montant_eur
+--         tests:
+--           - elementary.column_anomalies:
+--               column_anomalies:
+--                 - null_count
+--                 - null_percent
+--                 - min
+--                 - max
+--                 - average
+--                 - variance

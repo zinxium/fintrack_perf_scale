@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: vw_comptes_masked
+    description: |
+      Vue sécurisée des comptes — les colonnes PII sont automatiquement
+      masquées via masking policies selon le rôle consultant.
+      Destination : Power BI, Metabase.
+    columns:
+      - name: compte_id
+        tests: [unique, not_null]
+
+  - name: vw_transactions_summary
+    description: |
+      Vue agrégée jour x compte x catégorie sans PII.
+      Grain optimisé pour dashboarding Power BI.
+    columns:
+      - name: tenant_id
+        tests: [not_null]

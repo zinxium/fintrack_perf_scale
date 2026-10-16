@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: mart_transactions_anomalies
+    description: |
+      Détection d'anomalies par Z-score sur fenêtre glissante 90 jours.
+      Produit ~12k anomalies sur 91k transactions (13.4%).
+    config:
+      access: public
+    tests:
+      - elementary.volume_anomalies:
+          config:
+            tags: [elementary, anomaly]
+          arguments:
+            timestamp_column: date_transaction
+            time_bucket: {period: day, count: 1}
+            days_back: 30
+            anomaly_sensitivity: 3
+    columns:
+      - name: transaction_id
+        tests: [not_null, unique]
+      - name: compte_id
+        tests: [not_null]
+      - name: tenant_id
+        tests: [not_null]
+      - name: z_score
+        tests: [not_null]
+      - name: is_anomalie
+        tests: [not_null]
+      - name: severite
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['high', 'medium', 'low']
+
+  - name: mart_cohortes_retention
+    description: |
+      Analyse de rétention par cohorte mensuelle (mois d'ouverture du compte).
+      mois_offset 0-12, taux_retention_pct entre 0 et 100.
+    config:
+      access: public
+    tests:
+      - elementary.volume_anomalies:
+          config:
+            tags: [elementary, anomaly]
+          arguments:
+            timestamp_column: cohort_mois
+            time_bucket: {period: month, count: 1}
+            days_back: 90
+            anomaly_sensitivity: 3
+      - elementary.table_anomalies:
+          config:
+            tags: [elementary]
+          arguments:
+            table_anomalies:
+              - row_count
+    columns:
+      - name: cohort_mois
+        tests: [not_null]
+      - name: mois_offset
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 12
+      - name: nb_utilisateurs_cohorte
+        tests: [not_null]
+      - name: nb_utilisateurs_actifs
+        tests: [not_null]
+      - name: taux_retention_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100

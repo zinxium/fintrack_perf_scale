@@ -1,0 +1,39 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: dbt/dbt_project.yml
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 3.0.7
+    hooks:
+      - id: sqlfluff-lint
+        args: [--dialect, snowflake, --templater, jinja]
+        files: ^dbt/models/.*\.sql$
+
+  - repo: https://github.com/dbt-checkpoint/dbt-checkpoint
+    rev: v2.0.4
+    hooks:
+      - id: check-model-has-description
+        args: [--manifest, dbt/target/manifest.json]
+        exclude: ^dbt/macros/
+      - id: check-model-has-tests
+        args: [--test-cnt, "1", --manifest, dbt/target/manifest.json]
+        files: ^dbt/models/.*\.sql$
+        exclude: ^dbt/dbt_packages/
+      - id: check-script-semicolon
+        args: [--manifest, dbt/target/manifest.json]
+      - id: check-script-has-no-table-name
+        args: [--manifest, dbt/target/manifest.json]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
