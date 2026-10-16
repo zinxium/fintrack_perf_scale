@@ -23,6 +23,8 @@ select
     nom_client,            -- idem
     prenom_client,
     email,
+    telephone,
+    date_naissance,
     type_compte,
     devise,
     date_ouverture,

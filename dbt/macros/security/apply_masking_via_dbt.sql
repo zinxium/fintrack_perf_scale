@@ -18,7 +18,9 @@
         'iban':           'mask_iban',
         'ip_address':     'mask_ip_address',
         'device_id':      'mask_device_id',
-        'date_naissance': 'mask_date_of_birth'
+        'date_naissance': 'mask_date_of_birth',
+        'adresse_ligne1': 'mask_address',
+        'adresse_ligne2': 'mask_address'
     } %}
 
     {% set columns_query %}
@@ -35,7 +37,8 @@
             {% set col_lower = col | lower %}
             {% if col_lower in masking_map.keys() %}
                 {% set alter = "alter table " ~ this ~ " modify column " ~ col ~
-                                " set masking policy FINTRACK_PROD.governance." ~ masking_map[col_lower] %}
+                                " set masking policy " ~ target.database ~
+                                ".governance." ~ masking_map[col_lower] %}
                 {% do sqls.append(alter) %}
             {% endif %}
         {% endfor %}
